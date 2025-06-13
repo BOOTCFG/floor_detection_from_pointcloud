@@ -1,0 +1,7 @@
+camera:
+  range_near: 0.5
+  range_far: 8.0
+  fov_degrees: 60.0
+resolution: 0.1
+img_size: 20.0
+show_debug_window: true
