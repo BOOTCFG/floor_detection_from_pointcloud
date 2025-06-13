@@ -1,7 +1,11 @@
-camera:
-  range_near: 0.5
-  range_far: 8.0
-  fov_degrees: 60.0
-resolution: 0.1
-img_size: 20.0
-show_debug_window: true
+pointcloud_to_image_node:
+  ros__parameters:
+    camera:
+      range_near: 0.5
+      range_far: 6.0
+      fov_degrees: 58.0
+      gravity_aligned_frame: camera_gravity_link
+    resolution: 0.1
+    img_size: 20.0
+    show_debug_window: true
+    use_sim_time: true

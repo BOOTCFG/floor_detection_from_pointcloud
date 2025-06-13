@@ -31,8 +31,8 @@ public:
     declare_parameter<float>("resolution", 0.1f);
     declare_parameter<float>("img_size", 20.0f);
     declare_parameter<bool>("show_debug_window", false);
-    declare_parameter(
-        "camera.gravity_aligned_frame", std::string("camera_gravity_link"));
+    declare_parameter("camera.gravity_aligned_frame",
+                      std::string("camera_gravity_link"));
 
     // Get params into class fields
     range_near_ = get_parameter("camera.range_near").as_double();
@@ -41,7 +41,8 @@ public:
     resolution_ = get_parameter("resolution").as_double();
     img_size_ = get_parameter("img_size").as_double();
     show_debug_window_ = get_parameter("show_debug_window").as_bool();
-    gravity_aligned_frame_ = get_parameter("camera.gravity_aligned_frame").as_string();
+    gravity_aligned_frame_ =
+        get_parameter("camera.gravity_aligned_frame").as_string();
 
     subscription_ = create_subscription<sensor_msgs::msg::PointCloud2>(
         "/segmentation/ground", rclcpp::SensorDataQoS(),
@@ -56,6 +57,8 @@ public:
 
     laser_pub_ =
         create_publisher<sensor_msgs::msg::LaserScan>("detected_holes", 10);
+    holes_cloud_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+        "detected_holes_cloud", rclcpp::SensorDataQoS());
 
     // TF listener
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
@@ -75,6 +78,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr
       subscription_obstacles_;
   rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr laser_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr holes_cloud_pub_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -136,7 +140,7 @@ private:
         cv::Vec3b color = image.at<cv::Vec3b>(p);
         if (color == cv::Vec3b(FLOOR, 0, 0))
           break; // obstacle
-        if (color == cv::Vec3b(FLOOR, FLOOR, FLOOR))
+        if (color == cv::Vec3b(0, FLOOR, 0))
           found_floor = true;
         else if (found_floor && color == cv::Vec3b(0, 0, 0)) {
           detected_range =
@@ -148,6 +152,56 @@ private:
       scan.ranges.push_back(detected_range);
     }
     laser_pub_->publish(scan);
+  }
+
+  void raytraceFOVandPublishHolesPointCloud(cv::Mat &image) {
+    cv::Point origin(int(img_size_ / (2 * resolution_)),
+                     int(img_size_ / (2 * resolution_)));
+    float half_fov_rad = (fov_degrees_ / 2.0f) * (M_PI / 180.0f);
+    float angle_increment = (1.0f) * M_PI / 180.0f;
+
+    pcl::PointCloud<pcl::PointXYZ> hole_cloud;
+    hole_cloud.header.frame_id = "camera_gravity_link";
+    hole_cloud.points.clear();
+
+    for (float angle = -half_fov_rad; angle <= half_fov_rad;
+         angle += angle_increment) {
+      float r = range_far_;
+      cv::Point endpoint(origin.x + r * cos(angle) / resolution_,
+                         origin.y - r * sin(angle) / resolution_);
+
+      cv::LineIterator it(image, origin, endpoint, 8);
+      bool found_floor = false;
+
+      for (int i = 0; i < it.count; ++i, ++it) {
+        cv::Point p = it.pos();
+        if (p.x < 0 || p.x >= image.cols || p.y < 0 || p.y >= image.rows)
+          break;
+
+        cv::Vec3b color = image.at<cv::Vec3b>(p);
+        if (color == cv::Vec3b(FLOOR, 0, 0)) // obstacle
+          break;
+
+        if (color == cv::Vec3b(0, FLOOR, 0))
+          found_floor = true;
+        else if (found_floor && color == cv::Vec3b(0, 0, 0)) {
+          float hole_x = (p.x - origin.x) * resolution_;
+          float hole_y = -(p.y - origin.y) * resolution_;
+
+          // hole_cloud.points.emplace_back(hole_x, hole_y, 0.0f);
+          hole_cloud.points.emplace_back(hole_x, hole_y, -0.3f); //TODO: remove hardcoded z value
+
+          cv::circle(image, p, 2, cv::Scalar(0, 0, 255), -1);
+          // break;
+        }
+      }
+    }
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    pcl::toROSMsg(hole_cloud, cloud_msg);
+    cloud_msg.header.stamp = this->now();
+    cloud_msg.header.frame_id = "camera_gravity_link";
+    holes_cloud_pub_->publish(cloud_msg);
   }
 
   void process_costmap() {
@@ -186,7 +240,6 @@ private:
     }
 
     cloud = cloud_transformed;
-
     pcl::PointCloud<pcl::PointXYZ> cloud_obstacles;
     pcl::PointCloud<pcl::PointXYZ> cloud_obstacles_transformed;
     if (!msg_obstacles_) {
@@ -195,9 +248,7 @@ private:
       return;
     }
     pcl::fromROSMsg(*msg_obstacles_, cloud_obstacles);
-
     pcl::transformPointCloud(cloud_obstacles, cloud_obstacles_transformed, tf);
-
     cloud_obstacles = cloud_obstacles_transformed;
 
     if (cloud.empty() || cloud_obstacles.empty()) {
@@ -218,9 +269,14 @@ private:
           y_pixel < img.rows) {
 
         img.at<cv::Vec3b>(img.rows - y_pixel - 1, x_pixel) =
-            cv::Vec3b(FLOOR, FLOOR, FLOOR); // Floor color
+            cv::Vec3b(0, FLOOR, 0); // Floor color
       }
     }
+
+
+    cv::Mat closing;
+    cv::morphologyEx(img, closing, cv::MORPH_CLOSE,
+                     cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)));
 
     // obstacles pointcloud
     for (const auto &point : cloud_obstacles.points) {
@@ -230,25 +286,34 @@ private:
       // Skip points which fall out of the defined image boundaries
       if (x_pixel >= 0 && x_pixel < img.cols && y_pixel >= 0 &&
           y_pixel < img.rows) {
-        img.at<cv::Vec3b>(img.rows - y_pixel - 1, x_pixel) =
+        closing.at<cv::Vec3b>(img.rows - y_pixel - 1, x_pixel) =
             cv::Vec3b(FLOOR, 0, 0);
       }
     }
-    double scale = 4.0;
 
-    cv::Mat closing;
-    cv::morphologyEx(img, closing, cv::MORPH_CLOSE,
-                     cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3)));
 
-    drawCameraFOV(closing);
-    raytraceFOVandDetectHoles(closing);
+    // This part isnt working due to color merging
+    std::vector<cv::Mat> channels(3);
+    cv::split(closing, channels);
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+    // cv::morphologyEx(channels[0], channels[0], cv::MORPH_OPEN, kernel);
+    // cv::dilate(channels[0], channels[0], kernel);
+    cv::Mat result_img;
+    cv::merge(channels, result_img);  
+
+
+    // raytraceFOVandDetectHoles(result_img);
+    raytraceFOVandPublishHolesPointCloud(result_img);
 
     if (show_debug_window_) {
-      cv::Mat scaledClosing;
-      cv::resize(closing, scaledClosing, cv::Size(), scale, scale,
+      drawCameraFOV(result_img);
+
+      double scale = 4.0;
+      cv::Mat scaled;
+      cv::resize(result_img, scaled, cv::Size(), scale, scale,
                  cv::INTER_NEAREST);
 
-      cv::imshow("PointCloud Image", scaledClosing);
+      cv::imshow("PointCloud Image", scaled);
       cv::waitKey(1);
     }
   }
