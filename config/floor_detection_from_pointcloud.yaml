@@ -1,4 +1,4 @@
-pointcloud_to_image_node:
+floor_detection_from_pointcloud_node:
   ros__parameters:
     camera:
       range_near: 0.5

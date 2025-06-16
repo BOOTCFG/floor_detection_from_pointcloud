@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(pointcloud_to_image)
+project(floor_detection_from_pointcloud)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -23,8 +23,8 @@ find_package(OpenCV REQUIRED)
 
 
 ament_auto_find_build_dependencies()
-ament_auto_add_executable(pointcloud_to_image_node src/pointcloud_to_image_node.cpp)
-ament_target_dependencies(pointcloud_to_image_node
+ament_auto_add_executable(floor_detection_from_pointcloud_node src/floor_detection_from_pointcloud_node.cpp)
+ament_target_dependencies(floor_detection_from_pointcloud_node
   # rclcpp
   # sensor_msgs
   # pcl_conversions
@@ -37,7 +37,7 @@ ament_target_dependencies(pointcloud_to_image_node
 ament_auto_package(INSTALL_TO_SHARE launch config)
 
 # install(TARGETS
-#   pointcloud_to_image_node
+#   floor_detection_from_pointcloud_node
 #   DESTINATION lib/${PROJECT_NAME}/
 # )
 

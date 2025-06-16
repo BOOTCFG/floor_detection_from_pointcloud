@@ -20,9 +20,9 @@
 #define OBSTACLE 2
 // #define UNKNOWN 0
 
-class PointCloudToImageNode : public rclcpp::Node {
+class FloorDetectionFromPointCloudNode : public rclcpp::Node {
 public:
-  PointCloudToImageNode() : Node("pointcloud_to_image_node") {
+  FloorDetectionFromPointCloudNode() : Node("floor_detection_from_pointcloud_node") {
 
     // Define parameters with defaults
     declare_parameter<float>("camera.range_near", 0.5f);
@@ -46,13 +46,13 @@ public:
 
     subscription_ = create_subscription<sensor_msgs::msg::PointCloud2>(
         "/segmentation/ground", rclcpp::SensorDataQoS(),
-        std::bind(&PointCloudToImageNode::topic_callback, this,
+        std::bind(&FloorDetectionFromPointCloudNode::topic_callback, this,
                   std::placeholders::_1));
 
     subscription_obstacles_ =
         create_subscription<sensor_msgs::msg::PointCloud2>(
             "/segmentation/obstacle", rclcpp::SensorDataQoS(),
-            std::bind(&PointCloudToImageNode::topic_obstacles_callback, this,
+            std::bind(&FloorDetectionFromPointCloudNode::topic_obstacles_callback, this,
                       std::placeholders::_1));
 
     laser_pub_ =
@@ -67,7 +67,7 @@ public:
     cv::namedWindow("PointCloud Image", cv::WINDOW_AUTOSIZE);
   }
 
-  ~PointCloudToImageNode() { cv::destroyAllWindows(); }
+  ~FloorDetectionFromPointCloudNode() { cv::destroyAllWindows(); }
 
 private:
   float range_near_, range_far_, fov_degrees_, resolution_, img_size_;
@@ -331,7 +331,7 @@ private:
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<PointCloudToImageNode>());
+  rclcpp::spin(std::make_shared<FloorDetectionFromPointCloudNode>());
   rclcpp::shutdown();
   return 0;
 }
