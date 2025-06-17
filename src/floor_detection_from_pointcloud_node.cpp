@@ -86,6 +86,8 @@ private:
   sensor_msgs::msg::PointCloud2::SharedPtr msg_ground_;
   sensor_msgs::msg::PointCloud2::SharedPtr msg_obstacles_;
 
+  std::mutex processing_mutex_;
+
   void drawCameraFOV(cv::Mat &image) {
     float half_fov_rad = (fov_degrees_ / 2.0f) * (M_PI / 180.0f);
     std::vector<cv::Point> pts_pixel;
@@ -176,7 +178,7 @@ private:
       for (int i = 0; i < it.count; ++i, ++it) {
         cv::Point p = it.pos();
         if (p.x < 0 || p.x >= image.cols || p.y < 0 || p.y >= image.rows)
-          break;
+          continue;
 
         cv::Vec3b color = image.at<cv::Vec3b>(p);
         if (color == cv::Vec3b(FLOOR, 0, 0)) // obstacle
@@ -189,7 +191,7 @@ private:
           float hole_y = -(p.y - origin.y) * resolution_;
 
           // hole_cloud.points.emplace_back(hole_x, hole_y, 0.0f);
-          hole_cloud.points.emplace_back(hole_x, hole_y, -0.3f); //TODO: remove hardcoded z value
+          hole_cloud.points.emplace_back(hole_x, hole_y, 0.0f); //TODO: remove hardcoded z value
 
           cv::circle(image, p, 2, cv::Scalar(0, 0, 255), -1);
           // break;
@@ -206,10 +208,21 @@ private:
 
   void process_costmap() {
 
+    std::unique_lock<std::mutex> lock(processing_mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+      RCLCPP_WARN(this->get_logger(), "process_costmap() already running, skipping this callback");
+      return;
+    }
+
     // Convert ROS2 PointCloud2 message to PCL point cloud
     pcl::PointCloud<pcl::PointXYZ> cloud;
     pcl::PointCloud<pcl::PointXYZ> cloud_transformed;
     pcl::fromROSMsg(*msg_ground_, cloud);
+
+    if (cloud.empty() || cloud.width == 0 || cloud.points.empty()) {
+      RCLCPP_WARN(get_logger(), "Ground cloud empty or invalid; skipping processing");
+      return; 
+    }
 
     geometry_msgs::msg::TransformStamped tf_stamped;
 
@@ -283,11 +296,11 @@ private:
       int x_pixel = int((point.x + img_size_ / 2) / resolution_);
       int y_pixel = int((point.y + img_size_ / 2) / resolution_);
 
-      // Skip points which fall out of the defined image boundaries
-      if (x_pixel >= 0 && x_pixel < img.cols && y_pixel >= 0 &&
-          y_pixel < img.rows) {
-        closing.at<cv::Vec3b>(img.rows - y_pixel - 1, x_pixel) =
-            cv::Vec3b(FLOOR, 0, 0);
+      int row = closing.rows - y_pixel - 1;
+      int col = x_pixel;
+
+      if (col >= 0 && col < closing.cols && row >= 0 && row < closing.rows) {
+          closing.at<cv::Vec3b>(row, col) = cv::Vec3b(FLOOR, 0, 0);
       }
     }
 

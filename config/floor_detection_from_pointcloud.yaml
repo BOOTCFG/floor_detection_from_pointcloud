@@ -3,9 +3,10 @@ floor_detection_from_pointcloud_node:
     camera:
       range_near: 0.5
       range_far: 6.0
-      fov_degrees: 58.0
+      fov_degrees: 50.0
       gravity_aligned_frame: camera_gravity_link
     resolution: 0.1
     img_size: 20.0
-    show_debug_window: true
+    # show_debug_window: true
+    show_debug_window: false
     use_sim_time: true

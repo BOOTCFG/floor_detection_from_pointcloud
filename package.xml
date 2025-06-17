@@ -15,7 +15,7 @@
   <depend>pcl_ros</depend>
   <depend>cv_bridge</depend>
   <depend>image_transport</depend>
-  <depend>eigen_conversions</depend>
+  <!-- <depend>eigen_conversions</depend> -->
   <depend>tf2_ros</depend>
   <depend>geometry_msgs</depend>
   
