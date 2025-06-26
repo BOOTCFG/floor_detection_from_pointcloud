@@ -220,7 +220,7 @@ private:
     pcl::fromROSMsg(*msg_ground_, cloud);
 
     if (cloud.empty() || cloud.width == 0 || cloud.points.empty()) {
-      RCLCPP_WARN(get_logger(), "Ground cloud empty or invalid; skipping processing");
+      RCLCPP_DEBUG(get_logger(), "Ground cloud empty or invalid; skipping processing");
       return; 
     }
 
